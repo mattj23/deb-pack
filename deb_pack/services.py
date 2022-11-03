@@ -90,7 +90,7 @@ def _build_script(script_name, script_body_template, items: List[ServiceUnit], w
         with open(path, "w") as handle:
             handle.write("#!/bin/sh\nset -e\n")
             handle.write(content)
-            handle.write("\nexit0\n")
+            handle.write("\nexit 0\n")
     else:
         click.echo(f" > Existing {script_name} script, attempting to add service handling to end")
         with open(path, "r") as handle:

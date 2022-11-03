@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as handle:
 
 setuptools.setup(
     name="deb-pack",
-    version="0.1.0",
+    version="0.1.1",
     author="Matthew Jarvis",
     author_email="mattj23@gmail.com",
     description="Debian packaging tool",
