@@ -2,6 +2,7 @@
     Tooling for systemd services
 """
 import os
+import shutil
 from typing import List
 import click
 
@@ -113,6 +114,7 @@ def install_services(items: List[ServiceUnit], working_folder: str):
         _, item_filename = os.path.split(item.source_path)
         dest = os.path.join(working_folder, _install_path, item_filename)
         relative = "/" + os.path.relpath(dest, working_folder)
+        shutil.copy(item.source_path, dest)
         click.echo(f" > Service: {relative}")
 
     _build_script("postinst", _post_inst, items, working_folder)
