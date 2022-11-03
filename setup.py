@@ -25,7 +25,7 @@ setuptools.setup(
     ],
     entry_points={
         "console_scripts": [
-            "pack=pack.main:main",
+            "pack=deb_pack.main:main",
         ]
     }
 )

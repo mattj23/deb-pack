@@ -12,10 +12,26 @@ The build process involves creating a temporary working directory, copying all t
 
 Once the package is built, there is a command to push it to an *aptly* API with the option to update the *aptly* publishing.  This can be used to make the package go live in the repository.
 
-Currently the main limitations are:
+Currently, the main limitations are:
 
 * Dependence on `dpkg-deb` which means this tool needs to run on debian based systems. A future feature might be to implement the construction of the `.deb` file in pure python, allowing it to run on any system.
 * Simple interaction with *aptly*, I basically built what I needed and started using it. Commands to set up more complex features like authentication and creating repos/snapshots would be welcome additions.
+
+## Installation
+
+On a system with Python 3.8 or greater, this can be installed via pip:
+
+```bash
+pip3 install git+https://github.com/mattj23/deb-pack
+```
+
+Or it can be updated:
+
+```bash
+pip3 install git+https://github.com/mattj23/deb-pack --upgrade
+```
+
+*Currently, the tool will only function correctly on a debian based system because of the reliance on `dpkg-deb`*
 
 ## Usage
 
@@ -50,6 +66,20 @@ If the file is to be renamed the optional `--name` parameter can be used.
 ```bash
 pack add ./local-binary-89c03ef /usr/local/bin --name my_utility
 ```
+
+### Add Systemd Services
+
+Scripts which install and enable unit files for systemd services can be difficult to build automatically for debian binary packages because debhelper is made for creating binary packages from source packages.
+
+This tool will generate the `postinst`, `prerm`, and `postrm` scripts for unit files based on scripts taken from a debhelper run.  To do so, add the service unit file with the following command:
+
+```bash
+pack service path/to/my-unit-file.service
+```
+
+Multiple unit files can be added if desired. On package build, the service files will be set to install in `/lib/systemd/system` and the installation/enabling bash code will be generated based on the templates in [deb_pack/services.py](./deb_pack/services.py).
+
+If no script exists for each generated item, a new script will be created which has the correct header and ends with an `exit 0`.  If a script does exist, the tool will attempt to add the code at the end of the file before any trailing `exit 0`. This behavior is currently primitive and extensions are welcome.
 
 ### Set Control Key/Values
 

@@ -9,7 +9,8 @@ import subprocess
 from aptly_api import Client, PublishEndpoint
 from tempfile import TemporaryDirectory
 
-from pack.context import Context, create_context, load_context
+from deb_pack.context import Context, create_context, load_context
+from deb_pack.services import install_services
 
 _context_file = os.path.join(pathlib.Path.home(), ".deb-pack.json")
 
@@ -69,17 +70,24 @@ def build():
         deb_folder = os.path.join(root, "DEBIAN")
         os.makedirs(deb_folder)
 
+        # Copy targets
         for target in context.targets:
             destination = os.path.join(root, target.target_path)
             dest_path, _ = os.path.split(destination)
             if not os.path.exists(dest_path):
                 os.makedirs(dest_path)
-            click.echo(f" > {destination}")
+            relative = "/" + os.path.relpath(destination, root)
+            click.echo(f" > {relative}")
             shutil.copy(target.source_path, destination)
 
+        # Write control file
+        click.echo(" > Creating control file")
         with open(os.path.join(deb_folder, "control"), "w") as handle:
             handle.write("\n".join(f"{key}: {value}" for key, value in context.control.items()))
             handle.write("\n")
+
+        # Handle services
+        install_services(context.services, root)
 
         subprocess.call(["dpkg-deb", "--build", "--root-owner-group", root])
         built = os.path.join(directory, output_name)
@@ -98,12 +106,25 @@ def show():
     context = _load_context_or_exit()
 
     click.echo("Control data:")
-    for k, v in context.control.items():
-        click.echo(f"  {k}: {v}")
+    if context.control:
+        for k, v in context.control.items():
+            click.echo(f"  {k}: {v}")
+    else:
+        click.echo(" [no items]")
 
     click.echo("\nTargets:")
-    for item in context.targets:
-        click.echo(f"{item.source_path} -> {item.target_path}")
+    if context.targets:
+        for item in context.targets:
+            click.echo(f"{item.source_path} -> {item.target_path}")
+    else:
+        click.echo(" [no items]")
+
+    click.echo("\nServices:")
+    if context.services:
+        for item in context.services:
+            click.echo(f"{item.source_path}")
+    else:
+        click.echo(" [no items]")
 
 
 @main.command()
@@ -121,6 +142,29 @@ def control(key, value):
 
     context.control[key] = value
     click.echo(f"Setting control '{key}': {value}")
+    context.save(_context_file)
+
+
+@main.command()
+@click.argument("source_path", type=click.Path(exists=True))
+def service(source_path):
+    """ Add a service unit file to the context; path and inst/rm scripts will be handled automatically.
+
+    Adds a systemd unit file for a service to the build context. The location of installation and the
+    creation/modification of the postinst, postrm, and prerm scripts will be handled automatically during build.
+
+    Be aware that if there are existing scripts the system will make a best effort to merge the handling elements
+    into them, however the mechanics for this should be consulted in the project documentation.
+    """
+    context = _load_context_or_exit()
+
+    absolute = os.path.abspath(source_path)
+    if not absolute.endswith(".service"):
+        click.echo("The source path must point to a .service file")
+        sys.exit(1)
+
+    context.add_service(absolute)
+    click.echo(f"Adding service: {absolute}")
     context.save(_context_file)
 
 

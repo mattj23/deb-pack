@@ -11,9 +11,15 @@ class Target:
 
 
 @dataclass
+class ServiceUnit:
+    source_path: str
+
+
+@dataclass
 class Context:
     control: Dict[str, str]
     targets: List[Target]
+    services: List[ServiceUnit]
 
     def populate(self, path: str):
         for root, folders, files in os.walk(path):
@@ -37,6 +43,9 @@ class Context:
     def add_target(self, source, dest):
         self.targets.append(Target(source, dest))
 
+    def add_service(self, source):
+        self.services.append(ServiceUnit(source))
+
     def built_name(self) -> str:
         errors = []
         values = {}
@@ -52,7 +61,7 @@ class Context:
 
 
 def create_context() -> Context:
-    return Context({}, [])
+    return Context({}, [], [])
 
 
 def load_context(path: str) -> Context:
@@ -63,5 +72,6 @@ def load_context(path: str) -> Context:
         raw = json.load(handle)
 
     targets = [Target(**x) for x in raw["targets"]]
+    services = [ServiceUnit(**x) for x in raw["services"]]
 
-    return Context(raw["control"], targets)
+    return Context(raw["control"], targets, services)
