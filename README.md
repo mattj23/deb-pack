@@ -2,6 +2,64 @@
 
 Debian packaging tool for building binary .deb files and optionally pushing them to *aptly* repositories. Designed for use in CI/CD build pipelines, but will function perfectly well as a normal command line tool.
 
+## Quick Examples
+
+**Command line example:**
+
+```bash
+# Imagine that "starting_folder" is a folder containing most of the package files and a DEBIAN/control file
+pack create --from starting_folder/
+
+# Imagine that "build/my_binary" is a binary just compiled locally that needs to be installed in /usr/local/bin
+pack add build/my_binary /usr/local/bin
+
+pack control Version 1.0.0
+pack control Architecture arm64
+
+# After pack build a my-package-name_1.0.0_arm64.deb exists in the working directory
+pack build
+
+# Optionally, push it to an aptly repo
+pack aptly http://aptly-api.example.com:8080 my_repo
+```
+
+*In the above example, imagine there is a folder in the current directory called `starting_folder` which contains the skeleton of a `.deb` package that just needs a binary copied into it.  We create the build context from that folder with the `--from` option, which pre-loads most of what the package build will do and reads the `starting_folder/DEBIAN/control` file to pre-populate most of the keys.*
+
+*Imagine we just ran a `make` command which built a binary in the `./build/` folder.  We add that binary to the build context, specifying that it will installed into `/usr/local/bin` with the same name (the `--name` option would allow us to overwrite this), set the `Version` and `Architecture` keys in the control file, and run the `pack build` command.*
+
+*After that the `.deb` file will be put into the current working directory, and we can push it to an aptly API.*
+
+**Gitlab CI example:**
+
+```yaml
+build_job:
+  image: python:3.9-bullseye
+  before_script:
+    - apt-get update
+    - apt-get -y install git
+    - pip install git+https://github.com/mattj23/deb-pack
+  script:
+    - make
+    - pack create
+    - pack control Version ${CI_COMMIT_TAG}
+    - pack control Description "My binary service commit ${CI_COMMIT_SHORT_SHA}"
+    - pack control Package my-binary
+    - pack add build/my_binary
+    - pack service ./my-binary.service
+    - pack build
+    - pack aptly http://aptly-api.example.com:8080 my_repo --update-publish
+  only:
+    - tags
+```
+
+*In the above example, imagine a traditional project that compiles a binary with `make`. We install the tool in the `before_script` (though it would more likely be baked into a custom starting build image), invoke `make`, and imagine that a `./build/my_binary` file has been created.*
+
+*Unlike the previous example which used a starting folder containing most of the package contents, we create an empty build context with the bare `pack create` command.  We add the bare minimum entities to the debian control file, then add the built binary.*
+
+*Imagining that there is a `my-binary.service` systemd unit file in the root directory of the repository, we add this to the context with the `pack service` command. During package build it will move this to `/lib/systemd/system/my-binary.service` and set up the `postinst`, `prerm`, and  `postrm` scripts to activate/start/remove the service.*
+
+*Lastly we build and push the `.deb` file to an aptly repository, using the `--update-publish` flag so that it goes live immediately.*
+
 ## Overview
 
 The packaging tool works by generating and storing a working context which contains a manifest of files to be included in the final .deb package and a list of key/value pairs to be written into the control file.  This context is stored in a local file at `~/.deb-pack.json` and so is preserved between invocations of the tool.
@@ -15,6 +73,7 @@ Once the package is built, there is a command to push it to an *aptly* API with 
 Currently, the main limitations are:
 
 * Dependence on `dpkg-deb` which means this tool needs to run on debian based systems. A future feature might be to implement the construction of the `.deb` file in pure python, allowing it to run on any system.
+* Currently it is hardcoded to use the `--root-owner-group` command in `dpkg-deb`, no reason this can't be changed
 * Simple interaction with *aptly*, I basically built what I needed and started using it. Commands to set up more complex features like authentication and creating repos/snapshots would be welcome additions.
 
 ## Installation
