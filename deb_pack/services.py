@@ -113,6 +113,10 @@ def install_services(items: List[ServiceUnit], working_folder: str):
     for item in items:
         _, item_filename = os.path.split(item.source_path)
         dest = os.path.join(working_folder, _install_path, item_filename)
+        dest_path, _ = os.path.split(dest)
+        if not os.path.exists(dest_path):
+            os.makedirs(dest_path)
+
         relative = "/" + os.path.relpath(dest, working_folder)
         shutil.copy(item.source_path, dest)
         click.echo(f" > Service: {relative}")
