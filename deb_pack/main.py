@@ -89,6 +89,12 @@ def build():
         # Handle services
         install_services(context.services, root)
 
+        # Fix any permissions issues on the scripts
+        for script in ["preinst", "postinst", "prerm", "postrm"]:
+            path = os.path.join(deb_folder, script)
+            if os.path.exists(path):
+                os.chmod(path, 0o755)
+
         subprocess.call(["dpkg-deb", "--build", "--root-owner-group", root])
         built = os.path.join(directory, output_name)
         if not os.path.exists(built):
