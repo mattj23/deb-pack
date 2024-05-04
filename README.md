@@ -2,34 +2,94 @@
 
 Debian packaging tool for building binary .deb files and optionally pushing them to *aptly* repositories. Designed for use in CI/CD build pipelines, but will function perfectly well as a normal command line tool.
 
-## Quick Examples
+This is a simple tool which wraps `dpkg-deb` and adds some convenience features.  It is not as capable or complex as [deb-pkg-tools](https://github.com/xolox/python-deb-pkg-tools), but is meant to be dead simple to use for most needs.  I built this after facing challenges creating binary debian packages while trying to use some of the features of `debhelper`.
 
-**Command line example:**
+## Quick Start
+
+### Installation
+
+This project is available on PyPI, and can be installed into a Python virtual environment, using `pipx`, or with the `pip install --break-system-packages` flag (sometimes useful in build environments).
 
 ```bash
-# Imagine that "starting_folder" is a folder containing most of the package files and a DEBIAN/control file
-pack create --from starting_folder/
+pip install deb-pack
+```
 
-# Imagine that "build/my_binary" is a binary just compiled locally that needs to be installed in /usr/local/bin
-pack add build/my_binary /usr/local/bin
+*Currently, the tool will only function correctly on a Debian based system because of the reliance on `dpkg-deb`. This is installed by default on most Debian based distributions, but if not it's typically available with `apt install dpkg`.*
 
+### Examples
+
+**Packing a simple binary on the command line**
+
+Imagine you wanted to pack an updated version of `kubectl` (as of this writing, the current Bookworm version is 1.20 while the current `kubectl` release is 1.30).
+
+```bash
+# Download the version of interest and make it executable
+curl -LO https://dl.k8s.io/release/v1.30.0/bin/linux/amd64/kubectl
+chmod +x kubectl
+
+# Create a new build 'context' and add the minimum necessary control information to it
+pack create
+pack control Package kubectl
+pack control Version 1.30.0
+pack control Architecture amd64
+
+# Set the kubectl binary to go into /usr/local/bin
+pack add kubectl /usr/local/bin
+
+# Now create the deb file
+pack build
+```
+
+The `dpkg-deb` binary will complain that there was no Description or Maintainer field, but will execute successfully.  When finished, the file `kubectl_1.30.0_amd64.deb` will be in the current directory.
+
+**Creating a package using a starting folder**
+
+If you're used to using `dpkg-deb`, you know that it works on a specially prepared directory.  Within this directory there is a `./DEBIAN` folder which holds the control file alongside a number of optional metadata and script files, such as the pre/post installation and removal bash scripts.  Then, files getting deployed onto the system are put in sub-directories based on the absolute path of the intended destination.
+
+The `deb-pack` tool can use a folder with that structure as a starting point for a build context.
+
+Imagine you have a repository that, in addition to the source, has a folder with the scaffolding for the package.  It includes a configuration file that gets deployed to `/etc/my_project.conf` and has pre/post scripts for both installation and removal.  The `DEBIAN/control` file is already populated with all of the relevant fields except the latest version number.
+
+```
+my_project/
+├── Makefile
+├── packaging/
+│   ├── DEBIAN/
+│   │   ├── conffiles
+│   │   ├── control
+│   │   ├── postinst
+│   │   ├── postrm
+│   │   ├── preinst
+│   │   └── prerm
+│   └── etc/
+│       └── my_project.conf
+└── src/
+```
+
+In this case, you can use the `packaging/` folder as a starting point and only add the version and the compiled binary.
+
+```bash
+pack create --from packaging/
+
+# Imagine that after running make you end up with `my_binary` that needs to get installed to /usr/local/bin
+make
+pack add my_binary /usr/local/bin
+
+# Finally, update the version and build the .deb file
 pack control Version 1.0.0
-pack control Architecture arm64
-
-# After pack build a my-package-name_1.0.0_arm64.deb exists in the working directory
 pack build
 
 # Optionally, push it to an aptly repo
 pack aptly http://aptly-api.example.com:8080 my_repo
 ```
 
-*In the above example, imagine there is a folder in the current directory called `starting_folder` which contains the skeleton of a `.deb` package that just needs a binary copied into it.  We create the build context from that folder with the `--from` option, which pre-loads most of what the package build will do and reads the `starting_folder/DEBIAN/control` file to pre-populate most of the keys.*
+**Gitlab CI example**
 
-*Imagine we just ran a `make` command which built a binary in the `./build/` folder.  We add that binary to the build context, specifying that it will installed into `/usr/local/bin` with the same name (the `--name` option would allow us to overwrite this), set the `Version` and `Architecture` keys in the control file, and run the `pack build` command.*
+This example shows the use of `deb-pack` in Gitlab CI to create a `.deb` package and push it to a locally hosted `aptly` repository.  The source repository contains a `packaging/` folder similar to the previous example that has a control file pre-populated with most of the expected Debian package metadata fields.
 
-*After that the `.deb` file will be put into the current working directory, and we can push it to an aptly API.*
+Also in the root folder of the repository is a `my-binary.service` unit file.  This example makes use of the `deb-pack service` command, which configures the unit file to be installed in `/lib/systemd/system` and automatically adds the `postinst`, `prerm`, and `postrm` scripts to reload/enable/start/stop the service.  These scripts are based on the output of `debhelper`, and will provide smooth installation, update, and removal behavior under most circumstances.
 
-**Gitlab CI example:**
+Finally, this example includes deployment of a package to a locally hosted `aptly` repository with the `--update-publish` flag to update the published repository immediately.
 
 ```yaml
 build_job:
@@ -37,10 +97,10 @@ build_job:
   before_script:
     - apt-get update
     - apt-get -y install git
-    - pip install git+https://github.com/mattj23/deb-pack
+    - pip install deb-pack
   script:
     - make
-    - pack create
+    - pack create --from packaging/
     - pack control Version ${CI_COMMIT_TAG}
     - pack control Description "My binary service commit ${CI_COMMIT_SHORT_SHA}"
     - pack control Package my-binary
@@ -51,14 +111,6 @@ build_job:
   only:
     - tags
 ```
-
-*In the above example, imagine a traditional project that compiles a binary with `make`. We install the tool in the `before_script` (though it would more likely be baked into a custom starting build image), invoke `make`, and imagine that a `./build/my_binary` file has been created.*
-
-*Unlike the previous example which used a starting folder containing most of the package contents, we create an empty build context with the bare `pack create` command.  We add the bare minimum entities to the debian control file, then add the built binary.*
-
-*Imagining that there is a `my-binary.service` systemd unit file in the root directory of the repository, we add this to the context with the `pack service` command. During package build it will move this to `/lib/systemd/system/my-binary.service` and set up the `postinst`, `prerm`, and  `postrm` scripts to activate/start/remove the service.*
-
-*Lastly we build and push the `.deb` file to an aptly repository, using the `--update-publish` flag so that it goes live immediately.*
 
 ## Overview
 
@@ -76,21 +128,6 @@ Currently, the main limitations are:
 * Currently it is hardcoded to use the `--root-owner-group` command in `dpkg-deb`, no reason this can't be changed
 * Simple interaction with *aptly*, I basically built what I needed and started using it. Commands to set up more complex features like authentication and creating repos/snapshots would be welcome additions.
 
-## Installation
-
-On a system with Python 3.8 or greater, this can be installed via pip:
-
-```bash
-pip3 install git+https://github.com/mattj23/deb-pack
-```
-
-Or it can be updated:
-
-```bash
-pip3 install git+https://github.com/mattj23/deb-pack --upgrade
-```
-
-*Currently, the tool will only function correctly on a debian based system because of the reliance on `dpkg-deb`*
 
 ## Usage
 
